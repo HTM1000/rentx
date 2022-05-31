@@ -13,6 +13,7 @@ import { getAcessoryIcon } from '../../utils/getAccessoryIcon';
 import { getPlatformDate } from '../../utils/getPlataformDate';
 import { api } from '../../services/api';
 import { Alert } from 'react-native';
+import { useNetInfo } from '@react-native-community/netinfo';
 
 import {
     Container,
@@ -39,13 +40,10 @@ import {
     RentalPriceQuota,
     RentalPriceTotal,
 } from './styles';
-
-
 interface Params {
     car: CarDTO;
     dates: string[],
 }
-
 interface RentalPeriod {
     start: string;
     end: string;
@@ -58,34 +56,26 @@ export function SchedulingDetails(){
     const navigation = useNavigation<any>();
     const route = useRoute();
     const { car, dates } = route.params as Params;
+    const [carUpdated, setCarUpdated] = useState<CarDTO>({} as CarDTO);
+    const netInfo = useNetInfo();
 
     const rentTotal = Number(dates.length * car.price);
 
     async function handleConfirmeRental(){
         setLoading(true);
 
-        const schedulesByCar = await api.get(`/schedules_bycars/${car.id}`);
-        const unavailable_dates = [
-            ...schedulesByCar.data.unavailable_dates,
-            ...dates, 
-        ];
-
-        await api.post(`/schedules_byuser/`, {
+        await api.post(`rentals`, {
             user_id: 1,
-            car,
-            startDate: format(getPlatformDate(new Date(dates[0])), 'dd/MM/yyyy'),
-            endDate: format(getPlatformDate(new Date(dates[dates.length - 1])), 'dd/MM/yyyy'),
-        });
-
-        api.put(`/schedules_bycars/${car.id}`, {
-            id: car.id,
-            unavailable_dates
-
-        }).then(() => navigation.navigate('Complete', {
+            car_id: car.id,
+            start_date: new Date(dates[0]),
+            end_date: new Date(dates[dates.length - 1]),
+            total: rentTotal,
+        }).then(() => {
+            navigation.navigate('Complete', {
             nextScreenRoute: 'Home',
             title: 'Carro Alugado!',
             message: `Agora voce só precisa ir\naté a concessionaria da RENTX\npegar o seu automóvel`
-        }))
+        })})
         .catch(() => {
             setLoading(false);
             Alert.alert('Não foi possivel confirmar o agendamento')
@@ -104,6 +94,16 @@ export function SchedulingDetails(){
         })
     }, [])
 
+    useEffect(() => {
+        async function fetchCarUpdate(){
+            const response = await api.get(`/cars/${car.id}`);
+            setCarUpdated(response.data);
+        }
+        if(netInfo.isConnected === true){
+            fetchCarUpdate();
+        }
+    }, [netInfo.isConnected])
+
         return (
             <Container>
                 <Header>
@@ -111,7 +111,10 @@ export function SchedulingDetails(){
                 </Header>
 
                 <CarImages>
-                    <ImageSlider imagesUrl={car.photos} />
+                        <ImageSlider imagesUrl={
+                            !!carUpdated.photos ? carUpdated.photos : [{ id: car.thumbnail, photo: car.thumbnail}]
+                        }
+                        />
                 </CarImages>
 
                 <Content>
@@ -127,17 +130,19 @@ export function SchedulingDetails(){
                         </Rent>
                     </Details>
 
-                    <Accessorys>
                     {
-                        car.accessories.map(accessory => (
-                            <Acessory
+                    carUpdated.accessories && 
+                        <Accessorys>
+                        {
+                            carUpdated.accessories.map(accessory => (
+                                <Acessory 
                                 key={accessory.type}
-                                name={accessory.name}
-                                icon={getAcessoryIcon(accessory.type)}
-                            />
-                        ))    
+                                name={accessory.name} 
+                                icon={getAcessoryIcon(accessory.type)} />
+                            ))
+                        }
+                        </Accessorys>
                     }
-                    </Accessorys>
 
                     <RentalPeriod>
                         <CalendarIcon>
